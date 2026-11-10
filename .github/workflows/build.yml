@@ -1,0 +1,41 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Test
+        run: swift test
+
+      - name: Build app
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            export VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          ./scripts/build-app.sh
+          ditto -c -k --keepParent build/Deceive.app build/Deceive-macOS.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Deceive-macOS
+          path: build/Deceive-macOS.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Tags like v1.1.0-beta.1 become pre-releases, which the in-app update check ignores.
+        run: |
+          gh release create "$GITHUB_REF_NAME" build/Deceive-macOS.zip --title "Deceive for macOS $GITHUB_REF_NAME" --generate-notes \
+            $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)
